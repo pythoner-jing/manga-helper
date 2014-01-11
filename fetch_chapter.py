@@ -6,7 +6,10 @@ import urllib2, re
 
 reg_name = re.compile(r"g_comic_name\s=\s\"([^\"]+)\"")
 
-test_url = "http://manhua.dmzj.com/jiejiedewangxiang/" 
+url_test = "http://manhua.dmzj.com/cm100/"
+
+url_root = "http://manhua.dmzj.com"
+
 
 def read_url(url):
 	socket = urllib2.urlopen(url)
@@ -52,7 +55,7 @@ class Parser(SGMLParser):
 					return
 				
 				if k == "href":
-					self.url.append(v)
+					self.url.append(url_root + v)
 					
 				self.test_a = 1
 
@@ -76,16 +79,19 @@ class Parser(SGMLParser):
 		if self.test_a:
 			self.chapter.append(data)
 
-	def get_rs(self):
+	def get_chapter_url(self):
 		self.chapter_url = zip(self.chapter, self.url)
 		return self.chapter_url
 
+	def get_name(self, content):
+		return reg_name.findall(content)[0]
+
 def test():
 	parser = Parser()
-	content = read_url("http://manhua.dmzj.com/yaojingdeweiba/") 
+	content = read_url(url_test) 
 	parser.feed(content)
-	chapter_url = parser.get_rs()
-	name = reg_name.findall(content)[0]
+	chapter_url = parser.get_chapter_url()
+	name = parser.get_name(content) 
 	with open("fetch_chapter_output.txt", "w") as f:
 		f.write(name + "\n")
 		for c, u in chapter_url:
