@@ -1,10 +1,29 @@
 #!/usr/bin/env python
 #coding:utf-8
 
-import wx
-from fetch_chapter import *
+import wx, Queue
+from fetch_download import *
 
 UIFactory = {}
+thread_pool_comic = []
+queue_comic = None 
+max_num_task = 20
+g_task_no = -1 
+
+def gen_task_no():
+	global g_task_no
+	g_task_no += 1
+	return g_task_no
+
+def init_thread_pool():
+	global queue_comic
+	queue_comic = Queue.Queue(0)
+	map(lambda x : thread_pool_comic.append(Thread2(queue_comic, x, handler_comic_download)), xrange(max_num_task))
+	map(lambda x : x.setDaemon(True), thread_pool_comic)
+	map(lambda x : x.start(), thread_pool_comic)
+
+def handler_comic_download(task):
+	task.run_task()
 
 class PanelInfo(wx.Panel):
 	def __init__(self, parent, id = -1, pos = wx.DefaultPosition, size = wx.DefaultSize):
@@ -32,8 +51,14 @@ class PanelInfo(wx.Panel):
 
 	def OnDownload(self, evt):
 		if len(self.name) and len(UIFactory["ScrollChapter"].get_selected()):
-			UIFactory["ListBoxTask"].add_task(self.name + "\t\t\t0%")
-			print UIFactory["ScrollChapter"].get_selected()
+			if os.path.isdir(self.name) or os.path.isfile(self.name):
+				dialog = wx.MessageDialog(UIFactory["FrameMain"], "目录下有同名文件(夹)或者漫画已下载过了哦", "注意", wx.OK | wx.ICON_INFORMATION)
+				dialog.ShowModal()
+				return
+			info = self.name + " 0%"
+			UIFactory["ListBoxTask"].add_task(info)
+			download = Download(self.name, UIFactory["ScrollChapter"].get_selected(), UIFactory["ListBoxTask"], gen_task_no())
+			queue_comic.put(download)
 
 	def set_name(self, name):
 		self.name = name
@@ -76,12 +101,21 @@ class ListBoxTask(wx.ListBox):
 		wx.ListBox.__init__(self, parent, id, pos, size, [], wx.LB_SINGLE)
 
 		self.task_list = []
-
 		self.SetMinSize((200, 400))
 
-	def add_task(self, name):
-		self.task_list.append(name)
-		self.SetItems(self.task_list)
+	def add_task(self, info):
+		try:
+			self.task_list.append(info)
+			self.SetItems(self.task_list)
+		except Exception, e:
+			print "exception at add_task"
+
+	def set_info(self, task_no, info):
+		try:
+			self.task_list[task_no] = info
+			self.SetItems(self.task_list)
+		except Exception, e:
+			print "exception at add_task"
 
 class PanelDisplay(wx.Panel):
 	def __init__(self, parent, id = -1, pos = wx.DefaultPosition, size = wx.DefaultSize):
@@ -139,17 +173,24 @@ class ScrollChapter(wx.ScrolledWindow):
 
 	def link(self, url):
 		if len(url) == 0:
+			dialog = wx.MessageDialog(UIFactory["FrameMain"], "填好URL啊亲", "注意", wx.OK | wx.ICON_INFORMATION)
+			dialog.ShowModal()
 			return
 
 		if self.sizer:
 			self.sizer.Clear(True)
 
-		parser = Parser()
 		content = read_url(url)
+		tmp = get_comic_name(content)
+		if tmp == -1:
+			dialog = wx.MessageDialog(UIFactory["FrameMain"], "别随便拿个页面糊弄我= =", "注意", wx.OK | wx.ICON_INFORMATION)
+			dialog.ShowModal()
+			return 
+		self.name = tmp 
+		parser = ParserChapter()
 		parser.feed(content)
 		self.chapter_url = parser.get_chapter_url()
 		self.checkbox = []
-		self.name = parser.get_name(content)
 		UIFactory["PanelInfo"].set_name(self.name)
 
 		rows = 0
@@ -206,11 +247,13 @@ class FrameMain(wx.Frame):
 class App(wx.App):
 	def __init__(self, redirect = False):
 		wx.App.__init__(self, redirect)
+		init_thread_pool()
 		frame_main = FrameMain(None, -1, "manga-helper")
+		UIFactory["FrameMain"] = frame_main
 
 	def OnInit(self):
 		return True
 
 if __name__ == "__main__":
-	app = App()	
+	app = App(False)	
 	app.MainLoop()
